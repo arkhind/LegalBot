@@ -1,0 +1,17 @@
+[Unit]
+Description=LegalBot Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/LegalBot
+Environment=PATH=/root/LegalBot/venv/bin
+ExecStart=/root/LegalBot/venv/bin/python /root/LegalBot/main.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

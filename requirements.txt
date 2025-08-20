@@ -4,4 +4,4 @@ requests>=2.25.0
 loguru==0.7.2
 telethon>=1.28.0
 yookassa>=3.0.0
-# psycopg2-binary==2.9.9  # Временно отключено для тестирования 
+psycopg2-binary==2.9.9 

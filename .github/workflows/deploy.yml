@@ -1,0 +1,61 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Deploy to server
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USERNAME }}
+        key: ${{ secrets.KEY }}
+        port: ${{ secrets.PORT }}
+        script: |
+          # Переходим в директорию проекта
+          cd /root/projects/LegalBot
+          
+          # Останавливаем бота
+          sudo systemctl stop legalbot || true
+          
+          # Обновляем код
+          git fetch origin
+          git reset --hard origin/main
+          
+          # Активируем виртуальное окружение и обновляем зависимости
+          source venv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          
+          # Запускаем бота
+          sudo systemctl start legalbot
+          
+          # Проверяем статус
+          sudo systemctl status legalbot
+          
+          echo "Deployment completed at $(date)"
+          
+    - name: Notify deployment status
+      if: always()
+      uses: appleboy/telegram-action@master
+      with:
+        to: ${{ secrets.TELEGRAM_CHAT_ID }}
+        token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        message: |
+          🚀 LegalBot Deployment
+          
+          Status: ${{ job.status }}
+          Branch: ${{ github.ref_name }}
+          Commit: ${{ github.sha }}
+          Time: ${{ github.event.head_commit.timestamp }}
+          
+          ${{ job.status == 'success' && '✅ Deployment successful!' || '❌ Deployment failed!' }}
