@@ -15,22 +15,55 @@ class Database:
     def connect(self):
         """Подключение к базе данных"""
         try:
-            self.connection = psycopg2.connect(
-                host=os.getenv('PGHOST'),
-                database=os.getenv('PGDATABASE'),
-                user=os.getenv('PGUSER'),
-                password=os.getenv('PGPASSWORD'),
-                sslmode=os.getenv('PGSSLMODE'),
-                channel_binding=os.getenv('PGCHANNELBINDING')
-            )
+            # Сначала пробуем использовать DATABASE_URL
+            database_url = os.getenv('DATABASE_URL')
+            if database_url:
+                self.connection = psycopg2.connect(
+                    database_url,
+                    # Дополнительные параметры для стабильности
+                    keepalives_idle=30,
+                    keepalives_interval=10,
+                    keepalives_count=5,
+                    connect_timeout=10
+                )
+            else:
+                # Если DATABASE_URL нет, используем отдельные переменные
+                self.connection = psycopg2.connect(
+                    host=os.getenv('PGHOST'),
+                    database=os.getenv('PGDATABASE'),
+                    user=os.getenv('PGUSER'),
+                    password=os.getenv('PGPASSWORD'),
+                    sslmode=os.getenv('PGSSLMODE'),
+                    channel_binding=os.getenv('PGCHANNELBINDING'),
+                    # Дополнительные параметры для стабильности
+                    keepalives_idle=30,
+                    keepalives_interval=10,
+                    keepalives_count=5,
+                    connect_timeout=10
+                )
             logger.info("✅ Подключение к базе данных установлено")
         except Exception as e:
             logger.error(f"❌ Ошибка подключения к базе данных: {e}")
             self.connection = None
     
+    def ensure_connection(self):
+        """Проверяет и восстанавливает соединение с базой данных"""
+        try:
+            if self.connection is None or self.connection.closed:
+                logger.info("🔄 Восстановление соединения с базой данных...")
+                self.connect()
+                if self.connection and not self.connection.closed:
+                    return True
+                else:
+                    return False
+            return True
+        except Exception as e:
+            logger.error(f"❌ Ошибка проверки соединения: {e}")
+            return False
+    
     def create_tables(self):
         """Создание таблиц"""
-        if not self.connection:
+        if not self.ensure_connection():
             return
         
         try:
@@ -127,7 +160,7 @@ class Database:
         Returns:
             bool: True если успешно
         """
-        if not self.connection:
+        if not self.ensure_connection():
             return False
         
         try:
@@ -169,7 +202,7 @@ class Database:
         Returns:
             bool: True если успешно
         """
-        if not self.connection:
+        if not self.ensure_connection():
             return False
         
         try:
@@ -199,7 +232,7 @@ class Database:
         Returns:
             Dict: Информация о пользователе или None
         """
-        if not self.connection:
+        if not self.ensure_connection():
             return None
         
         try:
@@ -228,7 +261,7 @@ class Database:
         Returns:
             Dict: Информация о последней консультации или None
         """
-        if not self.connection:
+        if not self.ensure_connection():
             return None
         
         try:
@@ -263,7 +296,7 @@ class Database:
         Returns:
             bool: True если кодовое слово верное
         """
-        if not self.connection:
+        if not self.ensure_connection():
             return False
         
         try:
@@ -296,7 +329,7 @@ class Database:
         Returns:
             Dict: Информация о консультации или None
         """
-        if not self.connection:
+        if not self.ensure_connection():
             return None
         
         try:
@@ -330,7 +363,7 @@ class Database:
         Returns:
             str: Email или None
         """
-        if not self.connection:
+        if not self.ensure_connection():
             return None
         
         try:
@@ -351,39 +384,6 @@ class Database:
         except Exception as e:
             logger.error(f"❌ Ошибка получения email для платежа {payment_id}: {e}")
             return None
-        """
-        Получение информации о консультации по кодовому слову
-        
-        Args:
-            telegram_id: ID пользователя в Telegram
-            code_word: Кодовое слово
-            
-        Returns:
-            Dict: Информация о консультации или None
-        """
-        if not self.connection:
-            return None
-        
-        try:
-            cursor = self.connection.cursor(cursor_factory=RealDictCursor)
-            
-            cursor.execute("""
-                SELECT c.*, u.username, u.first_name, u.last_name, u.phone
-                FROM consultations c
-                JOIN users u ON c.user_id = u.telegram_id
-                WHERE c.user_id = %s AND c.code_word = %s AND c.payment_status = 'completed'
-                ORDER BY c.created_at DESC
-                LIMIT 1
-            """, (telegram_id, code_word))
-            
-            consultation = cursor.fetchone()
-            cursor.close()
-            
-            return dict(consultation) if consultation else None
-            
-        except Exception as e:
-            logger.error(f"❌ Ошибка получения консультации по кодовому слову для {telegram_id}: {e}")
-            return None
     
     def get_user_statistics(self, telegram_id: int) -> Dict:
         """
@@ -395,7 +395,7 @@ class Database:
         Returns:
             Dict: Статистика пользователя
         """
-        if not self.connection:
+        if not self.ensure_connection():
             return {}
         
         try:
@@ -439,7 +439,7 @@ class Database:
         Returns:
             bool: True если успешно
         """
-        if not self.connection:
+        if not self.ensure_connection():
             return False
         
         try:
@@ -467,7 +467,7 @@ class Database:
         Returns:
             int: Количество консультаций
         """
-        if not self.connection:
+        if not self.ensure_connection():
             return 0
         
         try:
@@ -495,7 +495,7 @@ class Database:
         Returns:
             int: Количество доступных консультаций
         """
-        if not self.connection:
+        if not self.ensure_connection():
             return 0
         
         try:
@@ -523,7 +523,7 @@ class Database:
         Returns:
             int: Количество использованных консультаций из подписки
         """
-        if not self.connection:
+        if not self.ensure_connection():
             return 0
         
         try:
@@ -565,7 +565,7 @@ class Database:
         Returns:
             bool: True если успешно
         """
-        if not self.connection:
+        if not self.ensure_connection():
             return False
         
         try:
