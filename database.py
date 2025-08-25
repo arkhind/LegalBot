@@ -4,47 +4,56 @@ from psycopg2.extras import RealDictCursor
 from loguru import logger
 from datetime import datetime
 from typing import Optional, Dict, List
+import time
 
 
 class Database:
     def __init__(self):
         self.connection = None
+        self.max_retries = 3
+        self.retry_delay = 2
         self.connect()
         self.create_tables()
     
     def connect(self):
-        """Подключение к базе данных"""
-        try:
-            # Сначала пробуем использовать DATABASE_URL
-            database_url = os.getenv('DATABASE_URL')
-            if database_url:
-                self.connection = psycopg2.connect(
-                    database_url,
-                    # Дополнительные параметры для стабильности
-                    keepalives_idle=30,
-                    keepalives_interval=10,
-                    keepalives_count=5,
-                    connect_timeout=10
-                )
-            else:
-                # Если DATABASE_URL нет, используем отдельные переменные
-                self.connection = psycopg2.connect(
-                    host=os.getenv('PGHOST'),
-                    database=os.getenv('PGDATABASE'),
-                    user=os.getenv('PGUSER'),
-                    password=os.getenv('PGPASSWORD'),
-                    sslmode=os.getenv('PGSSLMODE'),
-                    channel_binding=os.getenv('PGCHANNELBINDING'),
-                    # Дополнительные параметры для стабильности
-                    keepalives_idle=30,
-                    keepalives_interval=10,
-                    keepalives_count=5,
-                    connect_timeout=10
-                )
-            logger.info("✅ Подключение к базе данных установлено")
-        except Exception as e:
-            logger.error(f"❌ Ошибка подключения к базе данных: {e}")
-            self.connection = None
+        """Подключение к базе данных с retry логикой"""
+        for attempt in range(self.max_retries):
+            try:
+                # Сначала пробуем использовать DATABASE_URL
+                database_url = os.getenv('DATABASE_URL')
+                if database_url:
+                    self.connection = psycopg2.connect(
+                        database_url,
+                        # Дополнительные параметры для стабильности
+                        keepalives_idle=30,
+                        keepalives_interval=10,
+                        keepalives_count=5,
+                        connect_timeout=10
+                    )
+                else:
+                    # Если DATABASE_URL нет, используем отдельные переменные
+                    self.connection = psycopg2.connect(
+                        host=os.getenv('PGHOST'),
+                        database=os.getenv('PGDATABASE'),
+                        user=os.getenv('PGUSER'),
+                        password=os.getenv('PGPASSWORD'),
+                        sslmode=os.getenv('PGSSLMODE'),
+                        channel_binding=os.getenv('PGCHANNELBINDING'),
+                        # Дополнительные параметры для стабильности
+                        keepalives_idle=30,
+                        keepalives_interval=10,
+                        keepalives_count=5,
+                        connect_timeout=10
+                    )
+                logger.info("✅ Подключение к базе данных установлено")
+                return
+            except Exception as e:
+                logger.warning(f"⚠️ Попытка подключения {attempt + 1}/{self.max_retries} не удалась: {e}")
+                if attempt < self.max_retries - 1:
+                    time.sleep(self.retry_delay)
+                else:
+                    logger.error(f"❌ Ошибка подключения к базе данных после {self.max_retries} попыток: {e}")
+                    self.connection = None
     
     def ensure_connection(self):
         """Проверяет и восстанавливает соединение с базой данных"""
@@ -60,6 +69,33 @@ class Database:
         except Exception as e:
             logger.error(f"❌ Ошибка проверки соединения: {e}")
             return False
+    
+    def execute_with_retry(self, operation, *args, **kwargs):
+        """Выполняет операцию с автоматическим retry при ошибках подключения"""
+        for attempt in range(self.max_retries):
+            try:
+                if not self.ensure_connection():
+                    raise Exception("Не удалось установить соединение с базой данных")
+                
+                return operation(*args, **kwargs)
+                
+            except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+                logger.warning(f"⚠️ Ошибка подключения (попытка {attempt + 1}/{self.max_retries}): {e}")
+                if attempt < self.max_retries - 1:
+                    # Закрываем соединение и пробуем переподключиться
+                    if self.connection:
+                        try:
+                            self.connection.close()
+                        except:
+                            pass
+                    self.connection = None
+                    time.sleep(self.retry_delay)
+                else:
+                    logger.error(f"❌ Операция не удалась после {self.max_retries} попыток: {e}")
+                    raise
+            except Exception as e:
+                logger.error(f"❌ Ошибка выполнения операции: {e}")
+                raise
     
     def create_tables(self):
         """Создание таблиц"""
@@ -160,10 +196,7 @@ class Database:
         Returns:
             bool: True если успешно
         """
-        if not self.ensure_connection():
-            return False
-        
-        try:
+        def _add_user_operation():
             cursor = self.connection.cursor()
             
             cursor.execute("""
@@ -182,7 +215,9 @@ class Database:
             cursor.close()
             logger.info(f"✅ Пользователь {telegram_id} добавлен/обновлен")
             return True
-            
+        
+        try:
+            return self.execute_with_retry(_add_user_operation)
         except Exception as e:
             logger.error(f"❌ Ошибка добавления пользователя {telegram_id}: {e}")
             return False
@@ -202,10 +237,7 @@ class Database:
         Returns:
             bool: True если успешно
         """
-        if not self.ensure_connection():
-            return False
-        
-        try:
+        def _add_consultation_operation():
             cursor = self.connection.cursor()
             
             cursor.execute("""
@@ -217,7 +249,9 @@ class Database:
             cursor.close()
             logger.info(f"✅ Консультация добавлена для пользователя {user_id}")
             return True
-            
+        
+        try:
+            return self.execute_with_retry(_add_consultation_operation)
         except Exception as e:
             logger.error(f"❌ Ошибка добавления консультации для {user_id}: {e}")
             return False
@@ -232,10 +266,7 @@ class Database:
         Returns:
             Dict: Информация о пользователе или None
         """
-        if not self.ensure_connection():
-            return None
-        
-        try:
+        def _get_user_operation():
             cursor = self.connection.cursor(cursor_factory=RealDictCursor)
             
             cursor.execute("""
@@ -246,7 +277,9 @@ class Database:
             cursor.close()
             
             return dict(user) if user else None
-            
+        
+        try:
+            return self.execute_with_retry(_get_user_operation)
         except Exception as e:
             logger.error(f"❌ Ошибка получения информации о пользователе {telegram_id}: {e}")
             return None
@@ -261,10 +294,7 @@ class Database:
         Returns:
             Dict: Информация о последней консультации или None
         """
-        if not self.ensure_connection():
-            return None
-        
-        try:
+        def _get_consultation_operation():
             cursor = self.connection.cursor(cursor_factory=RealDictCursor)
             
             cursor.execute("""
@@ -280,7 +310,9 @@ class Database:
             cursor.close()
             
             return dict(consultation) if consultation else None
-            
+        
+        try:
+            return self.execute_with_retry(_get_consultation_operation)
         except Exception as e:
             logger.error(f"❌ Ошибка получения последней консультации для {telegram_id}: {e}")
             return None
@@ -296,10 +328,7 @@ class Database:
         Returns:
             bool: True если кодовое слово верное
         """
-        if not self.ensure_connection():
-            return False
-        
-        try:
+        def _verify_operation():
             cursor = self.connection.cursor()
             
             cursor.execute("""
@@ -313,7 +342,9 @@ class Database:
             cursor.close()
             
             return count > 0
-            
+        
+        try:
+            return self.execute_with_retry(_verify_operation)
         except Exception as e:
             logger.error(f"❌ Ошибка проверки кодового слова для {telegram_id}: {e}")
             return False
@@ -329,10 +360,7 @@ class Database:
         Returns:
             Dict: Информация о консультации или None
         """
-        if not self.ensure_connection():
-            return None
-        
-        try:
+        def _get_consultation_operation():
             cursor = self.connection.cursor(cursor_factory=RealDictCursor)
             
             cursor.execute("""
@@ -348,7 +376,9 @@ class Database:
             cursor.close()
             
             return dict(consultation) if consultation else None
-            
+        
+        try:
+            return self.execute_with_retry(_get_consultation_operation)
         except Exception as e:
             logger.error(f"❌ Ошибка получения консультации по кодовому слову для {telegram_id}: {e}")
             return None
@@ -363,10 +393,7 @@ class Database:
         Returns:
             str: Email или None
         """
-        if not self.ensure_connection():
-            return None
-        
-        try:
+        def _get_email_operation():
             cursor = self.connection.cursor()
             
             cursor.execute("""
@@ -380,7 +407,9 @@ class Database:
             cursor.close()
             
             return result[0] if result else None
-            
+        
+        try:
+            return self.execute_with_retry(_get_email_operation)
         except Exception as e:
             logger.error(f"❌ Ошибка получения email для платежа {payment_id}: {e}")
             return None
@@ -395,10 +424,7 @@ class Database:
         Returns:
             Dict: Статистика пользователя
         """
-        if not self.ensure_connection():
-            return {}
-        
-        try:
+        def _get_stats_operation():
             cursor = self.connection.cursor(cursor_factory=RealDictCursor)
             
             # Общее количество консультаций
@@ -416,7 +442,9 @@ class Database:
                 'total_consultations': stats['total_consultations'] if stats else 0,
                 'total_amount': float(stats['total_amount']) if stats and stats['total_amount'] else 0.0
             }
-            
+        
+        try:
+            return self.execute_with_retry(_get_stats_operation)
         except Exception as e:
             logger.error(f"❌ Ошибка получения статистики для {telegram_id}: {e}")
             return {}
@@ -439,10 +467,7 @@ class Database:
         Returns:
             bool: True если успешно
         """
-        if not self.ensure_connection():
-            return False
-        
-        try:
+        def _add_ai_consultation_operation():
             cursor = self.connection.cursor()
             cursor.execute("""
                 INSERT INTO ai_consultations (user_id, question, answer)
@@ -452,7 +477,9 @@ class Database:
             self.connection.commit()
             cursor.close()
             return True
-            
+        
+        try:
+            return self.execute_with_retry(_add_ai_consultation_operation)
         except Exception as e:
             logger.error(f"❌ Ошибка добавления ИИ консультации для {user_id}: {e}")
             return False
@@ -467,10 +494,7 @@ class Database:
         Returns:
             int: Количество консультаций
         """
-        if not self.ensure_connection():
-            return 0
-        
-        try:
+        def _get_count_operation():
             cursor = self.connection.cursor()
             cursor.execute("""
                 SELECT COUNT(*) FROM ai_consultations 
@@ -480,7 +504,9 @@ class Database:
             count = cursor.fetchone()[0]
             cursor.close()
             return count
-            
+        
+        try:
+            return self.execute_with_retry(_get_count_operation)
         except Exception as e:
             logger.error(f"❌ Ошибка получения количества ИИ консультаций для {user_id}: {e}")
             return 0
@@ -495,10 +521,7 @@ class Database:
         Returns:
             int: Количество доступных консультаций
         """
-        if not self.ensure_connection():
-            return 0
-        
-        try:
+        def _get_subscription_operation():
             cursor = self.connection.cursor()
             cursor.execute("""
                 SELECT SUM(consultations_count) FROM ai_subscriptions 
@@ -508,7 +531,9 @@ class Database:
             result = cursor.fetchone()[0]
             cursor.close()
             return int(result) if result else 0
-            
+        
+        try:
+            return self.execute_with_retry(_get_subscription_operation)
         except Exception as e:
             logger.error(f"❌ Ошибка получения подписки ИИ консультаций для {user_id}: {e}")
             return 0
@@ -523,10 +548,7 @@ class Database:
         Returns:
             int: Количество использованных консультаций из подписки
         """
-        if not self.ensure_connection():
-            return 0
-        
-        try:
+        def _get_used_operation():
             cursor = self.connection.cursor()
             cursor.execute("""
                 SELECT COUNT(*) FROM ai_consultations 
@@ -544,7 +566,9 @@ class Database:
             result = cursor.fetchone()[0]
             cursor.close()
             return int(result) if result else 0
-            
+        
+        try:
+            return self.execute_with_retry(_get_used_operation)
         except Exception as e:
             logger.error(f"❌ Ошибка получения использованных подписочных консультаций для {user_id}: {e}")
             return 0
@@ -565,10 +589,7 @@ class Database:
         Returns:
             bool: True если успешно
         """
-        if not self.ensure_connection():
-            return False
-        
-        try:
+        def _add_subscription_operation():
             cursor = self.connection.cursor()
             cursor.execute("""
                 INSERT INTO ai_subscriptions (user_id, subscription_type, consultations_count, amount, payment_id, payment_status)
@@ -578,7 +599,9 @@ class Database:
             self.connection.commit()
             cursor.close()
             return True
-            
+        
+        try:
+            return self.execute_with_retry(_add_subscription_operation)
         except Exception as e:
             logger.error(f"❌ Ошибка добавления подписки ИИ для {user_id}: {e}")
             return False
