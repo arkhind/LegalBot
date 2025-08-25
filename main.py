@@ -179,8 +179,14 @@ class LegalBot:
             logger.warning("OPENROUTER_API_KEY не найден в переменных окружения")
         
         # Настройка доступа для юристов
+        lawyer_id_str = os.getenv("LAWYER_TELEGRAM_ID", "0")
+        try:
+            lawyer_id = int(lawyer_id_str) if lawyer_id_str.isdigit() else 0
+        except (ValueError, AttributeError):
+            lawyer_id = 0
+            
         self.allowed_lawyers = [
-            int(os.getenv("LAWYER_TELEGRAM_ID", "0")),  # ID юриста из .env
+            lawyer_id,  # ID юриста из .env
             89895202224  # Номер телефона юриста
         ]
         
