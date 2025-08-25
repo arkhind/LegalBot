@@ -570,7 +570,6 @@ class LegalBot:
         keyboard = [
             [InlineKeyboardButton("🤖 ИИ консультация", callback_data="ai_consultation")],
             [InlineKeyboardButton("👨‍💼 Связаться с юристом", callback_data="real_lawyer")],
-            [InlineKeyboardButton("📊 Моя статистика", callback_data="user_stats")],
             [InlineKeyboardButton("ℹ️ О нас", callback_data="about")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -634,8 +633,7 @@ class LegalBot:
             
             elif query.data == "about":
                 await self.handle_about(query)
-            elif query.data == "user_stats":
-                await self.handle_user_stats(query)
+
             elif query.data == "main_menu":
                 await self.handle_main_menu(query)
             else:
@@ -925,7 +923,6 @@ class LegalBot:
                 consultation_name = "Устная консультация" if consultation_type == "oral" else "Полная консультация с изучением документов"
                 
                 keyboard = [
-                    [InlineKeyboardButton("📊 Моя статистика", callback_data="user_stats")],
                     [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1043,74 +1040,13 @@ class LegalBot:
     # async def pre_checkout_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
     # async def successful_payment_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
     
-    async def handle_user_stats(self, query):
-        """Обработка просмотра статистики пользователя"""
-        user_id = query.from_user.id
-        
-        # Получаем информацию о пользователе
-        user_info = self.database.get_user_info(user_id)
-        last_consultation = self.database.get_last_consultation(user_id)
-        stats = self.database.get_user_statistics(user_id)
-        
-        # Получаем статистику ИИ консультаций
-        ai_consultations_count = self.database.get_ai_consultations_count(user_id)
-        remaining_ai_consultations = self.database.get_remaining_ai_consultations(user_id)
-        
-        keyboard = [
-            [InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        # Формируем сообщение со статистикой
-        message = f"📊 Ваша статистика\n\n"
-        
-        if user_info:
-            message += f"👤 Пользователь: {user_info.get('username', 'Не указан')}\n"
-            if user_info.get('phone'):
-                message += f"📱 Телефон: {user_info['phone']}\n"
-            message += f"🆔 ID: {user_id}\n\n"
-        
-        message += f"📈 Статистика покупок:\n"
-        message += f"• Всего консультаций: {stats.get('total_consultations', 0)}\n"
-        message += f"• Общая сумма: {stats.get('total_amount', 0.0)}₽\n\n"
-        
-        message += f"🤖 Статистика ИИ консультаций:\n"
-        message += f"• Использовано консультаций: {ai_consultations_count}\n"
-        message += f"• Статус: Безлимитное использование\n\n"
-        
-        if last_consultation:
-            message += f"🕒 Последняя консультация:\n"
-            message += f"• Тип: {last_consultation['consultation_type']}\n"
-            message += f"• Сумма: {last_consultation['amount']}₽\n"
-            message += f"• Дата: {last_consultation['created_at'].strftime('%d.%m.%Y %H:%M')}\n"
-        else:
-            message += f"📝 У вас пока нет покупок\n"
-        
-        try:
-            if query.message:
-                await query.message.reply_text(
-                    message,
-                    reply_markup=reply_markup
-                )
-            else:
-                # Альтернативный способ отправки сообщения
-                await query.get_bot().send_message(
-                    chat_id=query.from_user.id,
-                    text=message,
-                    reply_markup=reply_markup
-                )
-        except Exception as e:
-            logger.error(f"Ошибка отправки сообщения в handle_user_stats: {e}")
-            return
-        
-        logger.info(f"Пользователь {user_id} просмотрел статистику")
+
     
     async def handle_about(self, query):
         """Обработка кнопки 'О нас'"""
         keyboard = [
             [InlineKeyboardButton("🤖 ИИ консультация", callback_data="ai_consultation")],
             [InlineKeyboardButton("👨‍💼 Связаться с юристом", callback_data="real_lawyer")],
-            [InlineKeyboardButton("📊 Моя статистика", callback_data="user_stats")],
             [InlineKeyboardButton("ℹ️ О нас", callback_data="about")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1149,7 +1085,6 @@ class LegalBot:
         keyboard = [
             [InlineKeyboardButton("🤖 ИИ консультация", callback_data="ai_consultation")],
             [InlineKeyboardButton("👨‍💼 Связаться с юристом", callback_data="real_lawyer")],
-            [InlineKeyboardButton("📊 Моя статистика", callback_data="user_stats")],
             [InlineKeyboardButton("ℹ️ О нас", callback_data="about")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1221,7 +1156,6 @@ class LegalBot:
             keyboard = [
                 [InlineKeyboardButton("🤖 ИИ консультация", callback_data="ai_consultation")],
                 [InlineKeyboardButton("👨‍💼 Связаться с юристом", callback_data="real_lawyer")],
-                [InlineKeyboardButton("📊 Моя статистика", callback_data="user_stats")],
                 [InlineKeyboardButton("ℹ️ О нас", callback_data="about")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1239,7 +1173,6 @@ class LegalBot:
             keyboard = [
                 [InlineKeyboardButton("🤖 ИИ консультация", callback_data="ai_consultation")],
                 [InlineKeyboardButton("👨‍💼 Связаться с юристом", callback_data="real_lawyer")],
-                [InlineKeyboardButton("📊 Моя статистика", callback_data="user_stats")],
                 [InlineKeyboardButton("ℹ️ О нас", callback_data="about")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
